@@ -6,7 +6,7 @@ import torchvision.transforms as T
 
 from torch.utils.data import DataLoader, Subset
 
-from data.data import get_dataset, DataTuple, ImgTuple
+from data.data import get_dataset, DataTuple, ImgTuple, get_test_set
 from plotting import make_visual, compare
 from models.unet_first_try import Unet
 import random
@@ -136,12 +136,12 @@ def train():
         print()
 
 # Cell
-train()
+# train()
 
 # Cell
-model_path_fin = '/media/king_rob/DataDrive/models/GI_segmentation/3d_unet_fin.pt'
+# model_path_fin = '/media/king_rob/DataDrive/models/GI_segmentation/3d_unet_fin.pt'
 
-torch.save(unet.state_dict(), model_path_fin)
+# torch.save(unet.state_dict(), model_path_fin)
 
 # Cell
 
