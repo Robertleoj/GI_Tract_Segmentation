@@ -2,37 +2,36 @@
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
-import torchvision.transforms as T
 
 from torch.utils.data import DataLoader, Subset
 
-from data.data import get_dataset, DataTuple, ImgTuple, get_test_set
-from plotting import make_visual, compare
+from data.data import get_dataset, DataTuple, ImgTuple
+from plotting import compare
 from models.unet_first_try import Unet
 import random
-from datetime import datetime
-import os
 from tqdm import tqdm
+import os
 
 cudnn.benchmark = True
-
 # Cell
-figure_root = "/home/king_rob/Desktop/Projects/Kaggle/GI_tract_img_segmentation/2D_image_segmentation/figures"
-
+DATA_ROOT = "/media/king_rob/DataDrive/data/GI_Tract_Image_Segment"
+PICKLE_PATH = "/media/king_rob/DataDrive/data/GI_Tract_Image_Segment/3d_computed_data"
 # Cell
 batch_size = 1
 device = torch.device('cuda')
 
 
 # Cell
-data = get_dataset(128)
+data = get_dataset(128, DATA_ROOT, PICKLE_PATH)
 
 # Cell
 """
 Split into train and val
 """
-val_size = int(0.1 * len(data))
-random_indices = torch.randperm(len(data))
+val_size = int(0.07 * len(data))
+# random_indices = torch.randperm(len(data))
+# torch.save(random_indices, os.path.join(PICKLE_PATH, 'index_shuffle.pt'))
+random_indices = torch.load(os.path.join(PICKLE_PATH, 'index_shuffle.pt'))
 train_indices = random_indices[:-val_size]
 val_indices = random_indices[-val_size:]
 
@@ -41,31 +40,35 @@ val_set = Subset(data, val_indices)
 # Cell
 len(train_set), len(val_set)
 
-# Cell
-# while True:
-# i, d, s = random.choice(train_set)
-# d : DataTuple
-# print(d)
-# plot_sample(i, s)
-
 
 # Cell
-model_path = '/media/king_rob/DataDrive/models/GI_segmentation/3d_unet_fin.pt'
+"""
+Get the saved model
+"""
+model_path = '/media/king_rob/DataDrive/models/GI_segmentation/3d_unet_fin_v3.pt'
 unet = Unet(1, 64, 4, 4).to(device)
 unet.load_state_dict(torch.load(model_path, map_location=device))
 
-
 # Cell
+"""
+Make dataloaders
+"""
 train_loader = DataLoader(train_set, batch_size,shuffle=True, num_workers=16)
 val_loader = DataLoader(val_set, batch_size, shuffle=True, num_workers=16)
 
 # Cell
-# loss_fn = nn.CrossEntropyLoss()
-loss_fn = nn.CrossEntropyLoss(weight=torch.tensor([0.7, 1, 1, 1]).to(device))
+"""
+loss and optim
+"""
+# Put a smaller weight on the "none" segmentation to make the model less shy of classifying
+loss_fn = nn.CrossEntropyLoss(weight=torch.tensor([0.64, 1, 1, 1]).to(device))
 optim = torch.optim.Adam(unet.parameters(), lr=0.0002)
 
 
 # Cell
+"""
+Training
+"""
 def run_through(x, y, train=True):
     if train:
         optim.zero_grad()
@@ -90,7 +93,6 @@ def train():
 
     iters = 0
 
-    best_val_loss = 100000
     val_iter = iter(val_loader)
 
     for i in range(n_epochs):
@@ -111,10 +113,10 @@ def train():
 
             if iters % print_every == 0:
                 try:
-                    x_val, d_val, y_val = next(val_iter)
+                    x_val, _, y_val = next(val_iter)
                 except:
                     val_iter = iter(val_loader)
-                    x_val, d_val, y_val = next(val_iter)
+                    x_val, _, y_val = next(val_iter)
             
                 x_val, y_val = x_val.to(device), y_val.to(device)
                 val_loss, _ = run_through(x_val, y_val, False)
@@ -139,47 +141,37 @@ def train():
 # train()
 
 # Cell
-# model_path_fin = '/media/king_rob/DataDrive/models/GI_segmentation/3d_unet_fin.pt'
+"""
+Save the model
+"""
+# model_path_fin = '/media/king_rob/DataDrive/models/GI_segmentation/3d_unet_fin_v3.pt'
 
 # torch.save(unet.state_dict(), model_path_fin)
 
 # Cell
-
-# Cell
+"""
+Free some GPU memory
+"""
 x, y = None, None
 torch.cuda.empty_cache()
 # Cell
+"""
+Get a random scan from the validation set
+"""
 ct, d, msk = random.choice(val_set)
 
 # Cell
+"""
+prepare the results for comparision
+"""
 unet.eval()
 ct = ct.to(device).unsqueeze(0)
 pred = unet(ct).argmax(1)
 pred.shape, msk.shape
-
-# Cell
 pred = pred.squeeze(0).squeeze(0)
 
 # Cell
 s = compare(ct.detach().cpu().squeeze(0), msk, pred.detach().cpu())
-
-       
-
-# Cell
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # Cell

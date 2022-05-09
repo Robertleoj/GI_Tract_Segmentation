@@ -1,22 +1,14 @@
 # Cell
-from re import A
-from sklearn.datasets import make_biclusters
 import torch
 from torchvision import transforms as T
-from torchvision.utils import make_grid
-# from torch.utils.data import Dat
 
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
 import pickle
 
 from PIL import Image
 import os
 from glob import glob
-import random
-import math
 
 from collections import namedtuple
 
@@ -36,7 +28,6 @@ label2class = {
     v: k for k, v in class2label.items()
 }
 
-DATA_ROOT = "/media/king_rob/DataDrive/data/GI_Tract_Image_Segment"
 
 # Cell
 def expand_df(df, cases_folder):
@@ -85,7 +76,7 @@ def make_day_list(df):
     all_cases = list(df['case'].unique())
 
     for case in all_cases:
-        print(f'{case=}')
+        print(f'case={case}')
         # self.data[case] = {}
         case_df = df[df['case'] == case]
 
@@ -128,7 +119,7 @@ def segment2mask(height, width, segmentation):
     mask = torch.zeros(height, width, dtype=torch.long)
 
     for c, seg in segmentation.items():
-        if not isinstance(seg, str):
+        if not isinstance(seg, str) or seg == '':
             continue
         splitted = list(map(int, seg.split(' ')))
 
@@ -142,8 +133,9 @@ def segment2mask(height, width, segmentation):
 
 class CTData:
 
-    def __init__(self, df, img_size, train, segmentation_df):
+    def __init__(self, df, img_size, train, segmentation_df, pickle_path):
         self.train = train
+        self.pickle_folder = pickle_path
 
         self.img_size = img_size
 
@@ -176,7 +168,6 @@ class CTData:
         return len(self.day_list)
 
     def _define_pickle_paths(self):
-        self.pickle_folder = os.path.join(DATA_ROOT, "3d_computed_data")
 
         if self.train:
             self.segmentations_file = os.path.join(self.pickle_folder, "3d_segmentations.pt")
@@ -228,7 +219,7 @@ class CTData:
             assert img_t.shape == mask_t.shape
             return img_t.unsqueeze(0), data, mask_t
         
-        return img_t, data
+        return img_t.unsqueeze(0), data
 
     def _get_mask_tensor(self, data, resize, imgs):
         mask_tensor = torch.zeros(len(imgs), self.img_size, self.img_size)
@@ -248,21 +239,22 @@ class CTData:
             mask_tensor[i] = seg
         return mask_tensor.round().long()
 
+    def _get_slice_tensor(self, resize, img):
+        pil_img = Image.open(img.path)
+
+        # We don't want to return the image straigt, as it is strangely encoded.
+        # We thus convert it to a tensor before returning it
+        img_t = torch.tensor(np.array(pil_img, dtype=np.float32)).unsqueeze(0)
+
+        img_t = resize(img_t).squeeze(0)
+        return img_t
+
 
     def _get_scan_tensor(self, resize, imgs):
         img_tensor = torch.zeros(len(imgs), self.img_size, self.img_size)
 
         for i, img in enumerate(imgs):
-            # Get the pil img
-            pil_img = Image.open(img.path)
-
-            # We don't want to return the image straigt, as it is strangely encoded.
-            # We thus convert it to a tensor before returning it
-            img_t = torch.tensor(np.array(pil_img, dtype=np.float32)).unsqueeze(0)
-
-            img_t = resize(img_t).squeeze(0)
-
-            img_tensor[i] = img_t
+            img_tensor[i] = self._get_slice_tensor(resize, img)
 
         # Normalize
         img_tensor = (img_tensor - img_tensor.mean()) / img_tensor.std()
@@ -270,13 +262,13 @@ class CTData:
         return img_tensor
 
 
-def get_dataset(sz):
-    df = pd.read_csv(os.path.join(DATA_ROOT, "train.csv"))
+def get_dataset(sz, data_root, pickle_path):
+    df = pd.read_csv(os.path.join(data_root, "train.csv"))
     df_segmentation = df
     df = df.drop(labels=['class', 'segmentation'], axis=1).drop_duplicates()
-    df = expand_df(df, os.path.join(DATA_ROOT, 'train'))
+    df = expand_df(df, os.path.join(data_root, 'train'))
 
-    return CTData(df, sz, True, df_segmentation)
+    return CTData(df, sz, True, df_segmentation, pickle_path)
 
 # Cell
 def get_test_df(cases_root):
@@ -294,11 +286,10 @@ def get_test_df(cases_root):
     return pd.DataFrame(ids, columns=['id'])
 
 
-def get_test_set(sz):
-    cases_root = os.path.join(DATA_ROOT, 'fake_test')
-    df = get_test_df(cases_root)
-    df = expand_df(df, cases_root)
-    return CTData(df, sz, False, None)
+def get_test_set(sz, data_path, pickle_path):
+    df = get_test_df(data_path)
+    df = expand_df(df, data_path)
+    return CTData(df, sz, False, None, pickle_path)
 
 # get_test_set(128)
 
